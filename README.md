@@ -19,10 +19,6 @@ State: LEVEL_3 (Police Dispatch)
 
 
 
---mobile app
--
-
-
 AIShield for HER
 │
 ├── Android App
@@ -44,3 +40,7 @@ AIShield for HER
       ├── ESP32
       ├── Accelerometer
       ├── Heart Rate Sensor
+
+
+To Run android version : python server.py
+To run using microphone : python stt.py
