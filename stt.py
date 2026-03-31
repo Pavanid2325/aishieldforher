@@ -1,6 +1,9 @@
+import wave
+
 from vosk import Model, KaldiRecognizer
 import sounddevice as sd
 import json
+import wave,subprocess,os
 from toxicity_predict import predict_toxicity
 
 model = Model(r"C:\Users\hp\Desktop\PROJECTS\aishield4for\aishieldforher\vosk-model-small-en-in-0.4")
@@ -53,8 +56,57 @@ def callback(indata, frames, time, status):
         partial = json.loads(rec.PartialResult())
         print("Listening:", partial["partial"])
 
-with sd.RawInputStream(samplerate=16000, blocksize = 8000, dtype='int16',
-                       channels=1, callback=callback):
-    print("Listening...")
+def convert_to_wav(input_file):
+    output_file = input_file.replace(".3gp", ".wav")
+
+    command = [
+        "ffmpeg",
+        "-i", input_file,
+        "-ar", "16000",
+        "-ac", "1",
+        output_file
+    ]
+
+    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    return output_file
+
+def process_audio_file(audio_path):
+    if audio_path.endswith(".3gp"):
+        print("debug: Converting 3gp to wav")
+        audio_path = convert_to_wav(audio_path)
+    wf = wave.open(audio_path, "rb")
+    print("Converted:", audio_path)
+
+
+    rec = KaldiRecognizer(model, wf.getframerate())
+
+    text_result = ""
+
     while True:
-        pass
+        data = wf.readframes(4000)
+        if len(data) == 0:
+            break
+        if rec.AcceptWaveform(data):
+            result = json.loads(rec.Result())
+            text_result += " " + result.get("text", "")
+    final_result = json.loads(rec.FinalResult())
+    text_result += " " + final_result.get("text", "")
+
+    print("Speech Text:", text_result)
+
+    scores = predict_toxicity(text_result)
+    threat_score = compute_threat_score(scores)
+    k_score = keyword_score(text_result)
+
+    final_score = 0.7 * threat_score + 0.3 * k_score
+
+    print("Final Threat Score:", final_score)
+
+    return final_score, text_result
+
+# with sd.RawInputStream(samplerate=16000, blocksize = 8000, dtype='int16',
+#                        channels=1, callback=callback):
+#     print("Listening...")
+#     while True:
+#         pass
