@@ -16,8 +16,6 @@ def compute_threat_score(scores):
         0.1 * scores["severe_toxic"]
     )
 
-
-
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.json
@@ -38,12 +36,14 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.route("/upload_audio", methods=["POST"])
 def upload_audio():
+    print("DEBUG: upload_audio endpoint hit")
+
     if 'audio' not in request.files:
+        print("No audio received")
         return jsonify({"error": "No audio file"}), 400
 
     file = request.files['audio']
 
-    # Create unique filename using timestamp
     timestamp = str(int(time.time()))
     filename = f"audio_{timestamp}.3gp"
 
@@ -54,10 +54,22 @@ def upload_audio():
 
     threat_score, text = process_audio_file(filepath)
 
+    print("Threat Score:", threat_score)
+    print("Text:", text)
+
     return jsonify({
         "threat_score": threat_score,
         "text": text
     })
+
+@app.route("/")
+def home():
+    return "Server Running"
+
+@app.route("/test", methods=["GET"])
+def test():
+    print("TEST endpoint hit")
+    return "Server is working"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
