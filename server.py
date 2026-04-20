@@ -9,9 +9,57 @@ import time
 import numpy as np
 from db import insert_incident
 import os
+from web3 import Web3
+import hashlib
+import json
+from datetime import datetime
 from dotenv import load_dotenv
+import psycopg2
 
 load_dotenv()
+INFURA_URL = os.getenv("INFURA_URL")
+PRIVATE_KEY = os.getenv("PRIVATE_KEY")
+ACCOUNT = os.getenv("WALLET_ADDRESS")
+CONTRACT_ADDRESS = os.getenv("CONTRACT_ADDRESS")
+ABI = [
+    {
+        "inputs": [
+            {"internalType": "string", "name": "_hash", "type": "string"},
+            {"internalType": "string", "name": "_level", "type": "string"}
+        ],
+        "name": "storeIncident",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+]
+
+contract = w3.eth.contract(
+    address=Web3.to_checksum_address(CONTRACT_ADDRESS),
+    abi=ABI
+)
+def generate_hash(data):
+    json_string = json.dumps(data, sort_keys=True)
+    return hashlib.sha256(json_string.encode()).hexdigest()
+def send_to_blockchain(hash_value, level):
+    nonce = w3.eth.get_transaction_count(ACCOUNT)
+
+    txn = contract.functions.storeIncident(
+        hash_value,
+        level
+    ).build_transaction({
+        'chainId': 11155111,
+        'gas': 200000,
+        'gasPrice': w3.to_wei('10', 'gwei'),
+        'nonce': nonce,
+    })
+
+    signed_txn = w3.eth.account.sign_transaction(txn, PRIVATE_KEY)
+    tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+
+    return w3.to_hex(tx_hash)
+
+w3 = Web3(Web3.HTTPProvider(INFURA_URL))
 app = Flask(__name__)
 audio_buffer = []
 
@@ -37,8 +85,8 @@ def parse_coordinate(value):
 
 
 def store_incident_details(threat_score, level, text, audio_path, lat, lon):
+
     print("Saving to DB...")
-    print(threat_score, level, text, lat, lon)
 
     insert_incident(
         user_id=1,
@@ -51,7 +99,26 @@ def store_incident_details(threat_score, level, text, audio_path, lat, lon):
         lon=parse_coordinate(lon)
     )
 
-    print("Saved successfully ✅")
+    print("Saved to DB ✅")
+
+    # 🔥 BLOCKCHAIN PART
+    try:
+        blockchain_data = {
+            "threat_score": threat_score,
+            "level": level,
+            "lat": lat,
+            "lon": lon,
+            "timestamp": str(datetime.now())
+        }
+
+        hash_value = generate_hash(blockchain_data)
+
+        tx_hash = send_to_blockchain(hash_value, level)
+
+        print("🔗 Blockchain TX:", tx_hash)
+
+    except Exception as e:
+        print("❌ Blockchain Error:", str(e))
 
 def insert_contact(name, phone, level):
     conn = psycopg2.connect(
