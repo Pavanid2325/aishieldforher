@@ -1,19 +1,19 @@
 import wave
 import json
 import subprocess
-import os
 import joblib
 from vosk import Model, KaldiRecognizer
 from toxicity_predict import predict_toxicity
-from utils import extract_features
+from utils import extract_features,extract_features_scream
 
 # Load models
 emotion_model, encoder = joblib.load("voice_model/model.pkl")
 text_model = Model(r"C:\Users\hp\Desktop\PROJECTS\aishield4for\aishieldforher\vosk-model-small-en-in-0.4")
+scream_model = joblib.load("scream_model/model.pkl")
 
 distress_keywords = [
-    "help", "save me", "leave me", "stop",
-    "don't touch", "please help", "i am scared"
+    "help", "save", "leave me", "stop",
+    "don't touch", "please", "i am scared","no"
 ]
 
 def keyword_score(text):
@@ -22,6 +22,21 @@ def keyword_score(text):
         if word in text:
             score += 1
     return min(score / 3, 1.0)
+
+def iot_score(hr, accel):
+    score = 0
+
+    # heart rate stress
+    if hr > 120:
+        score += 0.6
+    elif hr > 100:
+        score += 0.4
+
+    # sudden movement
+    if accel > 2.5:
+        score += 0.5
+
+    return min(score, 1.0)
 
 def convert_to_wav(input_file):
     output_file = input_file.replace(".3gp", ".wav")
@@ -52,6 +67,21 @@ def emotion_from_audio(audio_path):
         else:
             return 0.1
     return 0.0
+
+def scream_from_audio(audio_path):
+    features = extract_features_scream(audio_path)
+
+    if features is not None:
+        prediction = scream_model.predict([features])[0]
+
+        if prediction == 1:
+            print("🚨 Screaming Detected!")
+        
+        else:
+            print("✅ Normal Sound")
+    else:
+        print("Error processing audio")
+    return prediction
 
 def process_audio_file(audio_path):
     # Convert audio
@@ -93,16 +123,20 @@ def process_audio_file(audio_path):
     # Emotion score
     emotion_score = emotion_from_audio(audio_path)
 
+    scream_score = scream_from_audio(audio_path)
+
     # Final hybrid score
     final_score = (
-        0.6 * toxicity_score +
+        0.3 * toxicity_score +
         0.2 * k_score +
-        0.2 * emotion_score
+        0.5 * emotion_score +
+        0.3 * scream_score
     )
 
     print("Toxicity:", toxicity_score)
     print("Keyword:", k_score)
     print("Emotion:", emotion_score)
+    print("Scream:", scream_score)
     print("Final Threat Score:", final_score)
 
     return final_score, text_result

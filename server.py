@@ -3,63 +3,22 @@ from fileinput import filename
 from flask import Flask, request, jsonify
 from toxicity_predict import predict_toxicity
 import toxicity_predict
-from stt import process_audio_file
+from stt import iot_score, process_audio_file
 import os
 import time
 import numpy as np
 from db import insert_incident
 import os
-from web3 import Web3
 import hashlib
 import json
 from datetime import datetime
 from dotenv import load_dotenv
 import psycopg2
 
+
 load_dotenv()
-INFURA_URL = os.getenv("INFURA_URL")
-PRIVATE_KEY = os.getenv("PRIVATE_KEY")
-ACCOUNT = os.getenv("WALLET_ADDRESS")
-CONTRACT_ADDRESS = os.getenv("CONTRACT_ADDRESS")
-ABI = [
-    {
-        "inputs": [
-            {"internalType": "string", "name": "_hash", "type": "string"},
-            {"internalType": "string", "name": "_level", "type": "string"}
-        ],
-        "name": "storeIncident",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    }
-]
 
-contract = w3.eth.contract(
-    address=Web3.to_checksum_address(CONTRACT_ADDRESS),
-    abi=ABI
-)
-def generate_hash(data):
-    json_string = json.dumps(data, sort_keys=True)
-    return hashlib.sha256(json_string.encode()).hexdigest()
-def send_to_blockchain(hash_value, level):
-    nonce = w3.eth.get_transaction_count(ACCOUNT)
 
-    txn = contract.functions.storeIncident(
-        hash_value,
-        level
-    ).build_transaction({
-        'chainId': 11155111,
-        'gas': 200000,
-        'gasPrice': w3.to_wei('10', 'gwei'),
-        'nonce': nonce,
-    })
-
-    signed_txn = w3.eth.account.sign_transaction(txn, PRIVATE_KEY)
-    tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
-
-    return w3.to_hex(tx_hash)
-
-w3 = Web3(Web3.HTTPProvider(INFURA_URL))
 app = Flask(__name__)
 audio_buffer = []
 
@@ -70,11 +29,11 @@ last_saved_time = 0
 
 
 def get_threat_level(threat_score):
-    if threat_score < 0.5:
+    if threat_score < 0.4:
         return "IDLE"
-    if threat_score < 0.7:
+    elif threat_score < 0.6:
         return "LEVEL_1"
-    if threat_score < 0.85:
+    elif threat_score < 0.8:
         return "LEVEL_2"
     return "LEVEL_3"
 
@@ -83,42 +42,37 @@ def parse_coordinate(value):
         return 0.0
     return float(value)
 
+def generate_hash(data):
+    return hashlib.sha256(
+        json.dumps(data, sort_keys=True).encode()
+    ).hexdigest()
 
 def store_incident_details(threat_score, level, text, audio_path, lat, lon):
 
     print("Saving to DB...")
 
+    # 🔐 Prepare data for hashing
+    data = {
+        "threat_score": threat_score,
+        "level": level,
+        "text": text,
+        "lat": lat,
+        "lon": lon
+    }
+
+    hash_value = generate_hash(data)
+
     insert_incident(
         user_id=1,
-        threat_score=threat_score,
+        threat_score=float(threat_score),
         level=level,
         text=text,
         emotion="unknown",
         audio_path=audio_path,
         lat=parse_coordinate(lat),
-        lon=parse_coordinate(lon)
+        lon=parse_coordinate(lon),
+        hash=hash_value   
     )
-
-    print("Saved to DB ✅")
-
-    # 🔥 BLOCKCHAIN PART
-    try:
-        blockchain_data = {
-            "threat_score": threat_score,
-            "level": level,
-            "lat": lat,
-            "lon": lon,
-            "timestamp": str(datetime.now())
-        }
-
-        hash_value = generate_hash(blockchain_data)
-
-        tx_hash = send_to_blockchain(hash_value, level)
-
-        print("🔗 Blockchain TX:", tx_hash)
-
-    except Exception as e:
-        print("❌ Blockchain Error:", str(e))
 
 def insert_contact(name, phone, level):
     conn = psycopg2.connect(
@@ -145,6 +99,8 @@ def stream_audio():
         audio_bytes = request.data
         lat = float(request.args.get("latitude", 0))
         lon = float(request.args.get("longitude", 0))
+        # hr = float(request.args.get("hr", 0))
+        # accel = float(request.args.get("accel", 0))
 
         if not audio_bytes:
             return jsonify({"error": "No audio data"}), 400
@@ -166,7 +122,12 @@ def stream_audio():
         # 🔥 PROCESS DIRECTLY (NO BUFFER)
         threat_score, text = process_audio_file(wav_filepath)
 
-        level = get_threat_level(threat_score)
+        # iot = iot_score(hr, accel)
+
+        # final_score = (0.9*threat_score) + (0.3 * iot)
+        final_score = threat_score
+
+        level = get_threat_level(final_score)
 
         # 🔥 SAVE WITH COOLDOWN
         global last_saved_time
@@ -174,7 +135,7 @@ def stream_audio():
 
         if threat_score > 0.2 and (current_time - last_saved_time > 15):
             store_incident_details(
-                threat_score=threat_score,
+                threat_score=final_score,
                 level=level,
                 text=text,
                 audio_path=wav_filepath,
@@ -184,7 +145,7 @@ def stream_audio():
             last_saved_time = current_time
 
         return jsonify({
-            "threat_score": threat_score,
+            "threat_score": final_score,
             "text": text,
             "level": level
         })
@@ -351,7 +312,6 @@ def delete_incident(id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route("/get_incidents", methods=["GET"])
 def get_incidents():
     conn = psycopg2.connect(
@@ -365,11 +325,11 @@ def get_incidents():
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT id, timestamp, threat_score, threat_level,
-               speech_text, latitude, longitude
-        FROM incidents
-        ORDER BY timestamp DESC
-    """)
+    SELECT id, timestamp, threat_score, threat_level,
+           speech_text, latitude, longitude, hash
+    FROM incidents
+    ORDER BY timestamp DESC
+""")
 
     rows = cursor.fetchall()
 
@@ -382,7 +342,8 @@ def get_incidents():
             "threat_level": row[3],
             "text": row[4],
             "latitude": row[5],
-            "longitude": row[6]
+            "longitude": row[6],
+            "hash": row[7]
         })
 
     cursor.close()
