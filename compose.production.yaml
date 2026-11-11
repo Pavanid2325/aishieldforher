@@ -1,0 +1,25 @@
+# Always combine with compose.yaml. postgres is excluded by profile; RDS URL is mandatory.
+services:
+  postgres:
+    profiles: [local-only]
+  api1:
+    environment: {APP_ENV: production, FAKE_INFERENCE: 'false', TRUST_PROXY: 'true', RELEASE_ID: '${RELEASE_ID:?required}'}
+    volumes: &rds
+      - ${RDS_CA_DIR:?required}:/run/rds:ro
+  api2:
+    environment: {APP_ENV: production, FAKE_INFERENCE: 'false', TRUST_PROXY: 'true', RELEASE_ID: '${RELEASE_ID:?required}'}
+    volumes: *rds
+  worker:
+    environment: {APP_ENV: production, RELEASE_ID: '${RELEASE_ID:?required}'}
+    volumes: *rds
+  dispatcher:
+    environment: {APP_ENV: production, RELEASE_ID: '${RELEASE_ID:?required}'}
+    volumes: *rds
+  migrate:
+    environment: {APP_ENV: production}
+    volumes: *rds
+  nginx:
+    ports: !override ['80:80', '443:443']
+    volumes:
+      - ./deploy/nginx.production.conf:/etc/nginx/nginx.conf:ro
+      - ${TLS_DIR:?required}:/etc/nginx/tls:ro

@@ -1,0 +1,13 @@
+**
+!requirements.txt
+!*.py
+!migrations/
+!migrations/**
+!scripts/
+!scripts/**
+!deploy/
+!deploy/**
+!compose*.yaml
+!model-assets.sha256
+test*.py
+train*.py

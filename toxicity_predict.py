@@ -1,3 +1,4 @@
+import os
 import pickle
 import re
 import string
@@ -14,9 +15,9 @@ sys.modules['__main__'].tokenize = tokenize
 
 
 # now load models
-models = pickle.load(open("models/nbsvm_models.pkl","rb"))
-ratios = pickle.load(open("models/ratios.pkl","rb"))
-vectorizer = pickle.load(open("models/vectorizer.pkl","rb"))
+models = pickle.load(open(os.path.join(os.getenv("MODEL_ROOT", "."), "models/nbsvm_models.pkl"),"rb"))
+ratios = pickle.load(open(os.path.join(os.getenv("MODEL_ROOT", "."), "models/ratios.pkl"),"rb"))
+vectorizer = pickle.load(open(os.path.join(os.getenv("MODEL_ROOT", "."), "models/vectorizer.pkl"),"rb"))
 
 label_cols = [
     "toxic",

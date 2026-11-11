@@ -1,13 +1,14 @@
 from fileinput import filename
 
 from flask import Flask, request, jsonify
-from toxicity_predict import predict_toxicity
-import toxicity_predict
-from stt import iot_score, process_audio_file
+from werkzeug.exceptions import HTTPException
+
+
+from inference import calculate_iot_threat, process_audio_file
 import os
 import time
-import numpy as np
-from db import insert_incident
+
+from db import insert_incident, connect
 import os
 import hashlib
 import json
@@ -19,21 +20,27 @@ import psycopg2
 load_dotenv()
 
 
-app = Flask(__name__)
+from operations import create_operations_app, incident_alert_status
+from flask import g
+app = create_operations_app()
+app.config['REQUIRE_MODELS'] = True
+from inference import initialize
+initialize(app)
+app.logger.info(json.dumps({'event':'api_started','release':os.getenv('RELEASE_ID','development')}))
 audio_buffer = []
 
 
-UPLOAD_FOLDER = "uploads"
+UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 last_saved_time = 0
 
 
 def get_threat_level(threat_score):
-    if threat_score < 0.4:
+    if threat_score < 0.005:
         return "IDLE"
-    elif threat_score < 0.6:
+    elif threat_score < 0.02:
         return "LEVEL_1"
-    elif threat_score < 0.8:
+    elif threat_score < 0.05:
         return "LEVEL_2"
     return "LEVEL_3"
 
@@ -49,9 +56,7 @@ def generate_hash(data):
 
 def store_incident_details(threat_score, level, text, audio_path, lat, lon):
 
-    print("Saving to DB...")
-
-    # 🔐 Prepare data for hashing
+    app.logger.info('{"event":"incident_persisting"}')
     data = {
         "threat_score": threat_score,
         "level": level,
@@ -62,7 +67,7 @@ def store_incident_details(threat_score, level, text, audio_path, lat, lon):
 
     hash_value = generate_hash(data)
 
-    insert_incident(
+    return insert_incident(
         user_id=1,
         threat_score=float(threat_score),
         level=level,
@@ -71,17 +76,11 @@ def store_incident_details(threat_score, level, text, audio_path, lat, lon):
         audio_path=audio_path,
         lat=parse_coordinate(lat),
         lon=parse_coordinate(lon),
-        hash=hash_value   
+        correlation_id=g.request_id, hash=hash_value   
     )
 
 def insert_contact(name, phone, level):
-    conn = psycopg2.connect(
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT")
-)
+    conn = connect()
     cursor = conn.cursor()
 
     cursor.execute(
@@ -99,28 +98,24 @@ def stream_audio():
         audio_bytes = request.data
         lat = float(request.args.get("latitude", 0))
         lon = float(request.args.get("longitude", 0))
-        # hr = float(request.args.get("hr", 0))
-        # accel = float(request.args.get("accel", 0))
+    
 
         if not audio_bytes:
             return jsonify({"error": "No audio data"}), 400
 
         import wave, time, os
 
-        timestamp = str(int(time.time() * 1000))
+        timestamp = __import__("uuid").uuid4().hex
         wav_filepath = os.path.join(UPLOAD_FOLDER, f"chunk_{timestamp}.wav")
-
-        # 🔥 PCM → WAV
         with wave.open(wav_filepath, 'wb') as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
             wf.setframerate(16000)
             wf.writeframes(audio_bytes)
 
-        print("WAV saved:", wav_filepath)
-
-        # 🔥 PROCESS DIRECTLY (NO BUFFER)
-        threat_score, text = process_audio_file(wav_filepath)
+        
+        accel = float(request.args.get("accel", 0))
+        threat_score, text = process_audio_file(wav_filepath,accel)
 
         # iot = iot_score(hr, accel)
 
@@ -128,13 +123,9 @@ def stream_audio():
         final_score = threat_score
 
         level = get_threat_level(final_score)
-
-        # 🔥 SAVE WITH COOLDOWN
-        global last_saved_time
-        current_time = time.time()
-
-        if threat_score > 0.2 and (current_time - last_saved_time > 15):
-            store_incident_details(
+        incident_id = None
+        if threat_score > 0.2:
+            incident_id = store_incident_details(
                 threat_score=final_score,
                 level=level,
                 text=text,
@@ -142,30 +133,43 @@ def stream_audio():
                 lat=lat,
                 lon=lon
             )
-            last_saved_time = current_time
 
         return jsonify({
             "threat_score": final_score,
             "text": text,
+            "incident_id": incident_id,
+            "alert_status": incident_alert_status(incident_id),
             "level": level
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print("Error:", str(e))
-        return jsonify({"error": str(e)}), 500 
+        app.logger.error('{"event":"request_failed"}')
+        return jsonify({"error": "Request failed"}), 500 
 
 from flask import jsonify
 import psycopg2
 
+@app.route("/iot_data", methods=["POST"])
+def iot_data():
+    try:
+        data = request.json
+        accel = float(data.get("accel", 0))
+        iot_score = calculate_iot_threat(accel)
+
+        return jsonify({
+            "accel": accel,
+            "iot_score": iot_score,
+            "level": get_threat_level(iot_score)
+        })
+
+    except Exception as e:
+        return jsonify({"error": "Request failed"}), 500
+    
 @app.route("/get_contacts", methods=["GET"])
 def get_contacts():
-    conn = psycopg2.connect(
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT")
-)
+    conn = connect()
     cursor = conn.cursor()
 
     cursor.execute("SELECT id, name, phone, level FROM contacts ORDER BY id DESC")
@@ -193,13 +197,7 @@ def add_contact():
     phone = data.get("phone")
     level = data.get("level")
 
-    conn = psycopg2.connect(
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT")
-)
+    conn = connect()
     cursor = conn.cursor()
 
     cursor.execute(
@@ -215,13 +213,7 @@ def add_contact():
 
 @app.route("/delete_contact/<int:id>", methods=["DELETE"])
 def delete_contact(id):
-    conn = psycopg2.connect(
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT")
-)
+    conn = connect()
     cursor = conn.cursor()
 
     cursor.execute("DELETE FROM contacts WHERE id=%s", (id,))
@@ -240,13 +232,7 @@ def update_contact(id):
     phone = data.get("phone")
     level = data.get("level")
 
-    conn = psycopg2.connect(
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT")
-)
+    conn = connect()
     cursor = conn.cursor()
 
     cursor.execute(
@@ -262,13 +248,7 @@ def update_contact(id):
 
 @app.route("/get_contacts_by_level/<int:level>", methods=["GET"])
 def get_contacts_by_level(level):
-    conn = psycopg2.connect(
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT")
-)
+    conn = connect()
     cursor = conn.cursor()
 
     if level == 1:
@@ -292,13 +272,7 @@ def get_contacts_by_level(level):
 @app.route("/delete_incident/<int:id>", methods=["DELETE"])
 def delete_incident(id):
     try:
-        conn = psycopg2.connect(
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT")
-)
+        conn = connect()
         cursor = conn.cursor()
 
         cursor.execute("DELETE FROM incidents WHERE id = %s", (id,))
@@ -310,17 +284,11 @@ def delete_incident(id):
         return jsonify({"message": "Deleted successfully"})
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Request failed"}), 500
 
 @app.route("/get_incidents", methods=["GET"])
 def get_incidents():
-    conn = psycopg2.connect(
-    dbname=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    host=os.getenv("DB_HOST"),
-    port=os.getenv("DB_PORT")
-)
+    conn = connect()
 
     cursor = conn.cursor()
 
