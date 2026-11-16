@@ -17,6 +17,27 @@ curl.exe --fail http://localhost:8080/health/ready
 
 Use a separate disposable database for tests. Never run the integration suite against real incident data. Full commands, environment variables, model mounts, worker inspection, deployment and rollback are in the runbook. The notes below are retained prototype material; several proposed features/thresholds differ from the running code.
 
+
+flowchart TD
+    AND["Android application"] -->|"HTTPS request"| N["Nginx reverse proxy"]
+
+    subgraph HOST["Application host: local Docker or intended EC2"]
+        N --> A1["API 1: Gunicorn and Flask"]
+        N --> A2["API 2: Gunicorn and Flask"]
+
+        D["Pending-alert dispatcher"] -->|"Publish task"| R[("Redis broker")]
+        R --> W["Celery worker"]
+    end
+
+    A1 -->|"Incident and alert intent"| DB[("PostgreSQL: local container or RDS")]
+    A2 -->|"Incident and alert intent"| DB
+
+    DB -->|"Eligible pending alerts"| D
+    W -->|"Read state and save attempts"| DB
+    W --> P["Alert provider"]
+    P --> REC["Recipient notification"]
+
+    
 ## Earlier prototype notes
 
 --ai model
