@@ -4,11 +4,11 @@ from flask import Flask, request, jsonify
 from werkzeug.exceptions import HTTPException
 
 
-from inference import calculate_iot_threat, process_audio_file
+from app.inference import calculate_iot_threat, process_audio_file
 import os
 import time
 
-from db import insert_incident, connect
+from app.db import insert_incident, connect
 import os
 import hashlib
 import json
@@ -20,11 +20,11 @@ import psycopg2
 load_dotenv()
 
 
-from operations import create_operations_app, incident_alert_status
+from app.operations import create_operations_app, incident_alert_status
 from flask import g
 app = create_operations_app()
 app.config['REQUIRE_MODELS'] = True
-from inference import initialize
+from app.inference import initialize
 initialize(app)
 app.logger.info(json.dumps({'event':'api_started','release':os.getenv('RELEASE_ID','development')}))
 audio_buffer = []

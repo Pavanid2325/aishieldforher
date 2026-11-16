@@ -13,7 +13,7 @@ import pytest
 def client(monkeypatch, tmp_path):
     monkeypatch.delenv('API_TOKEN', raising=False)
     monkeypatch.setenv('UPLOAD_FOLDER',str(tmp_path))
-    import server
+    from app import server
     server.UPLOAD_FOLDER = str(tmp_path)
     server.app.config['TESTING'] = True
     return server.app.test_client()
@@ -22,8 +22,8 @@ def client(monkeypatch, tmp_path):
 def database(monkeypatch):
     if os.getenv('RUN_INTEGRATION') != 'true':
         pytest.skip('Set RUN_INTEGRATION=true with an isolated DATABASE_URL')
-    import migrate
-    from db import transaction
+    from app import migrate
+    from app.db import transaction
     migrate.main()
     with transaction() as conn:
         with conn.cursor() as cur:

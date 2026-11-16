@@ -13,7 +13,7 @@ def test_existing_home_iot_and_audio(client):
 
 @pytest.mark.parametrize('score,level', [(0,'IDLE'),(.005,'LEVEL_1'),(.02,'LEVEL_2'),(.05,'LEVEL_3')])
 def test_unchanged_thresholds(score,level):
-    from server import get_threat_level
+    from app.server import get_threat_level
     assert get_threat_level(score) == level
 
 def test_auth_and_diagnostics(client,monkeypatch):
@@ -27,7 +27,7 @@ def test_auth_and_diagnostics(client,monkeypatch):
     assert client.get('/',headers={'Authorization':'Bearer test-api'}).status_code == 200
 
 def test_ready_failure_is_redacted(client,monkeypatch):
-    import operations
+    from app import operations
     @contextmanager
     def unavailable():
         raise RuntimeError('secret password')
@@ -43,20 +43,20 @@ def test_correlation_and_upload_limit(client):
     assert client.post('/stream_audio',data=b'x'*(10*1024*1024+1)).status_code == 413
 
 def test_production_configuration_fails_closed(monkeypatch):
-    from operations import create_operations_app
+    from app.operations import create_operations_app
     monkeypatch.setenv('APP_ENV','production')
     monkeypatch.delenv('API_TOKEN',raising=False)
     with pytest.raises(RuntimeError):
         create_operations_app()
 
 def test_contacts_incidents_and_pending_contract(client,database,monkeypatch):
-    from db import insert_incident
+    from app.db import insert_incident
     assert client.post('/add_contact',json={'name':'Test','phone':'fake-number','level':1}).json == {'message':'added'}
     contacts=client.get('/get_contacts').json
     contact_id=contacts[0]['id']
     assert client.get('/get_contacts_by_level/2').json == ['fake-number']
     assert client.put(f'/update_contact/{contact_id}',json={'name':'Updated','phone':'fake-number','level':2}).json == {'message':'updated'}
-    monkeypatch.setattr('server.process_audio_file',lambda *args:(.3,'distress'))
+    monkeypatch.setattr('app.server.process_audio_file',lambda *args:(.3,'distress'))
     result=client.post('/stream_audio',data=b'\0\0'*16).json
     assert result['incident_id']
     assert result['alert_status'] == 'pending'

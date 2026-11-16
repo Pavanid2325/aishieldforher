@@ -1,10 +1,46 @@
 # AI Shield for Her
 
-This checkout contains the Flask/PostgreSQL backend and trusted audio model assets. Android source and a real emergency-message provider are absent. Existing routes and active scoring behavior are preserved; the current scoring inputs are constants and never reach the incident-persistence threshold during ordinary inference.
+Flask backend for audio and IoT threat scoring, contact management, incident storage, and durable alert dispatch. The checkout does not contain Android app source or a production notification provider. Current inference uses fixed scoring inputs, so ordinary requests do not reach the incident persistence threshold. See [architecture and behavior](docs/architecture.md) for the exact routes and limits.
 
-The DevOps extension runs Nginx, two non-root Gunicorn APIs, Redis, Celery workers, a durable alert dispatcher and PostgreSQL locally. Production uses the same application image on EC2 with private RDS, verified database TLS, HTTPS and GitHub OIDC/SSM deployment. Two API containers provide process redundancy; EC2 remains one host failure point. Fake alert delivery is available locally; production notification delivery is disabled until a real provider adapter exists.
+## Project layout
 
-Start with the [local/AWS runbook](docs/deployment.md), [architecture and repository findings](docs/architecture.md), and [executed verification results](docs/verification.md).
+| Path | Purpose |
+| --- | --- |
+| [`app/`](app/) | Flask API, scoring, database access, Celery alerts, and SQL migrations |
+| [`assets/models/`](assets/models/) | Trusted toxicity, audio, and Vosk model files; mounted read only into containers |
+| [`assets/data/`](assets/data/) | Jigsaw training dataset and archive |
+| [`assets/model-assets.sha256`](assets/model-assets.sha256) | Checksums for the model files used at runtime |
+| [`deploy/`](deploy/) | Nginx configuration and AWS policy examples |
+| [`scripts/`](scripts/) | Deployment, rollback, model verification, and smoke checks |
+| [`experiments/`](experiments/) | Manual database/model checks and toxicity training code; not part of the API image |
+| [`tests/`](tests/) | Automated API, alert, configuration, and deployment tests |
+| [`docs/`](docs/) | Deployment runbook, architecture, verification, and [earlier prototype notes](docs/prototype-notes.md) |
+| [`threat-detection-voice/`](threat-detection-voice/) | Linked voice detection repository |
+
+The root holds the README, Compose and Docker configuration, Python dependency files, and example environment settings. Runtime uploads stay in the ignored `uploads/` folder locally or in a Docker volume.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Client["Client / Android app"] -->|HTTPS| N["Nginx"]
+    N --> API1["Flask API 1"]
+    N --> API2["Flask API 2"]
+    API1 --> DB[(PostgreSQL / RDS)]
+    API2 --> DB
+    DB -->|pending alerts| D["Dispatcher"]
+    D --> R[(Redis)]
+    R --> W["Celery worker"]
+    W --> DB
+    W --> P["Alert provider"]
+    P --> Recipient["Recipient"]
+```
+
+Alert delivery uses a fake provider locally. Production alert delivery remains disabled until a real provider is implemented.
+
+## Run locally with Docker
+
+From the repository root, with Docker Desktop running:
 
 ```powershell
 Copy-Item .env.example .env.local
@@ -15,109 +51,6 @@ docker compose --env-file .env.local up -d --wait api1 api2 worker dispatcher ng
 curl.exe --fail http://localhost:8080/health/ready
 ```
 
-Use a separate disposable database for tests. Never run the integration suite against real incident data. Full commands, environment variables, model mounts, worker inspection, deployment and rollback are in the runbook. The notes below are retained prototype material; several proposed features/thresholds differ from the running code.
+The example `MODEL_ASSET_DIR=./assets/models` matches this layout. To verify the checked in models before loading them, run `python -m scripts.verify_models` from the repository root. For a separate model bundle, set `MODEL_ASSET_DIR` to its directory containing `toxicity/`, `voice_model/`, `scream_model/`, and `vosk-model-small-en-in-0.4/`.
 
-
-flowchart TD
-    AND["Android application"] -->|"HTTPS request"| N["Nginx reverse proxy"]
-
-    subgraph HOST["Application host: local Docker or intended EC2"]
-        N --> A1["API 1: Gunicorn and Flask"]
-        N --> A2["API 2: Gunicorn and Flask"]
-
-        D["Pending-alert dispatcher"] -->|"Publish task"| R[("Redis broker")]
-        R --> W["Celery worker"]
-    end
-
-    A1 -->|"Incident and alert intent"| DB[("PostgreSQL: local container or RDS")]
-    A2 -->|"Incident and alert intent"| DB
-
-    DB -->|"Eligible pending alerts"| D
-    W -->|"Read state and save attempts"| DB
-    W --> P["Alert provider"]
-    P --> REC["Recipient notification"]
-
-    
-## Earlier prototype notes
-
---ai model
-vosk 
-jigsaw dataset
--emotion-sound 
--heartbeat
--motion(accelerometer and gyroscope)
--location(AIShield4Her incident reports (timestamp, location, threat_score)
-Public crime databases (API integration with police records))
--15 to 30sec video capturing
-
-
-State: IDLE
-  ↓ (threat_score ≥ 0.5)
-State: LEVEL_1 (Family Notification)
-  ↓ (threat_score ≥ 0.7 AND 30s timeout)
-State: LEVEL_2 (Community Alert)
-  ↓ (threat_score ≥ 0.85 OR user confirmation)
-State: LEVEL_3 (Police Dispatch)
-
-
-
-AIShield for HER
-│
-└── Android App
-    ├── Record Audio -
-    ├── Upload Audio -
-    ├── Receive Threat Score -
-    ├── SMS Alerts -
-    ├── Location -
-    └── Video
-
-└── Flask Server
-    ├── Upload API -
-    ├── Audio Storage -
-    ├── AI Engine
-    │       ├── Vosk STT -
-    │       ├── Toxicity Model -
-    │       ├── Emotion Audio Model -
-    │       ├── Keyword Detection -
-    │       ├── Sensor data
-    │       └── Threat Score Engine       
-    └── Database 
-        ├── Users
-        ├── Contacts
-        ├── Incidents
-        └── Evidence
-└── Hardware
-    ├── ESP32
-    ├── Accelerometer
-    └── Heart Rate Sensor
-
-AIShield App
-│
-├── Login / Signup
-├── Home Dashboard
-├── Emergency Contacts
-├── Live Monitoring / Recording
-├── Incident History
-├── Location View
-├── Settings / Permissions
-└── Profile
-
-
-To Run android version : python server.py
-To run using microphone : python stt.py
-run these in cmd before running the server:
-    adb devices
-    adb reverse tcp:5000 tcp:5000
-
-    
-cmd for postgres:
-password : postgres
-"C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -h localhost
- \c aishield              
- \dt          to get tables
- 
-
-## Implemented DevOps extension
-
-Start with the [local and AWS runbook](docs/deployment.md), [repository evidence and architecture](docs/architecture.md), and [actual verification results](docs/verification.md). The older notes above describe prototype intentions; the evidence document distinguishes active scoring from proposed features. No Android source or external alert provider is present in this checkout. Production alert delivery remains disabled until a real adapter is supplied.
-
+Use a disposable database for integration tests, never real incident data. Full local setup, AWS deployment and rollback are in the [deployment runbook](docs/deployment.md); recorded checks are in [verification results](docs/verification.md).

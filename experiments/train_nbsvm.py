@@ -3,6 +3,7 @@ import numpy as np
 import re
 import string
 import pickle
+from pathlib import Path
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -12,7 +13,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 # Load dataset
 # ------------------------------
 
-train = pd.read_csv("C:\\Users\\hp\\Desktop\\aishield4for\\aishieldforher\\jigsaw-toxic-comment-classification-challenge\\train.csv")
+root = Path(__file__).resolve().parents[1]
+train = pd.read_csv(root / "assets/data/jigsaw-toxic-comment-classification-challenge/train.csv")
 
 COMMENT = "comment_text"
 
@@ -110,8 +112,9 @@ for label in label_cols:
 # Save models
 # ------------------------------
 
-pickle.dump(models, open("models/nbsvm_models.pkl","wb"))
-pickle.dump(ratios, open("models/ratios.pkl","wb"))
-pickle.dump(vec, open("models/vectorizer.pkl","wb"))
+model_dir = root / "assets/models/toxicity"
+pickle.dump(models, open(model_dir / "nbsvm_models.pkl","wb"))
+pickle.dump(ratios, open(model_dir / "ratios.pkl","wb"))
+pickle.dump(vec, open(model_dir / "vectorizer.pkl","wb"))
 
 print("Models saved successfully")

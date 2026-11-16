@@ -7,7 +7,7 @@ import uuid
 from flask import Flask, g, jsonify, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.exceptions import HTTPException
-from db import transaction
+from app.db import transaction
 
 def create_operations_app():
     app = Flask(__name__)

@@ -10,7 +10,7 @@ from scripts.verify_models import verify
 def main():
     verify()
     started=time.monotonic()
-    from stt import process_audio_file
+    from app.stt import process_audio_file
     loaded=time.monotonic()
     with tempfile.TemporaryDirectory() as folder:
         path=Path(folder)/'silence.wav'

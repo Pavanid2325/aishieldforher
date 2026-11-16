@@ -19,6 +19,8 @@ build/
 !.env.example
 __pycache__/
 .pytest_cache/
+.test-layout-tmp/
+.vscode/
 .releases/
 .deploy.lock
 *.log

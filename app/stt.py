@@ -1,13 +1,14 @@
 import os
+from app.model_paths import model_root
 def asset(path):
-    return os.path.join(os.getenv('MODEL_ROOT', '.'), path)
+    return str(model_root() / path)
 import wave
 import json
 import subprocess
 import joblib
 from vosk import Model, KaldiRecognizer
-from toxicity_predict import predict_toxicity
-from utils import extract_features,extract_features_scream
+from app.toxicity_predict import predict_toxicity
+from app.utils import extract_features,extract_features_scream
 
 # Load models
 emotion_model, encoder = joblib.load(asset("voice_model/model.pkl"))

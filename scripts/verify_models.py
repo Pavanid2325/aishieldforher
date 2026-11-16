@@ -2,10 +2,11 @@
 import hashlib
 import os
 from pathlib import Path
+from app.model_paths import model_root
 
 def verify():
-    root=Path(os.getenv('MODEL_ROOT','.'))
-    manifest=Path(__file__).resolve().parents[1]/'model-assets.sha256'
+    root=model_root()
+    manifest=Path(__file__).resolve().parents[1]/'assets/model-assets.sha256'
     for line in manifest.read_text().splitlines():
         expected,relative=line.split('  ',1)
         digest=hashlib.sha256()

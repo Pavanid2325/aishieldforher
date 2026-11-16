@@ -1,7 +1,7 @@
-"""Explicit, serialized forward-only SQL migrations: python -m migrate."""
+"""Explicit, serialized forward-only SQL migrations: python -m app.migrate."""
 import hashlib
 from pathlib import Path
-from db import transaction
+from app.db import transaction
 
 def main():
     with transaction() as conn:

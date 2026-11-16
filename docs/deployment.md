@@ -16,14 +16,14 @@ curl.exe --fail http://localhost:8080/health/live
 curl.exe --fail http://localhost:8080/health/ready
 docker compose --env-file .env.local run --rm --no-deps api1 python scripts/smoke.py http://nginx
 docker compose --env-file .env.local logs --tail 100 worker dispatcher
-docker compose --env-file .env.local exec worker celery -A alerts:celery inspect ping
+docker compose --env-file .env.local exec worker celery -A app.alerts:celery inspect ping
 docker compose --env-file .env.local exec dispatcher python scripts/check_dispatcher.py
 docker compose --env-file .env.local exec -T postgres psql -U shield -d shield -c "SELECT status,count(*),min(created_at) AS oldest FROM alert_outbox GROUP BY status;"
 ```
 
 Use the example diagnostic token only locally: `curl.exe -H "Authorization: Bearer local-diagnostics-change-me" http://localhost:8080/ops/instance`. Repeated authenticated requests demonstrate api1/api2. No API, Redis or database host ports are published. For Android emulator/device USB debugging: `adb reverse tcp:8080 tcp:8080`. Normal root route remains `Server Running`.
 
-Asset paths in MODEL_ASSET_DIR must contain models, voice_model, scream_model and vosk-model-small-en-in-0.4. Model files are excluded from the image and mounted read-only. [model-assets.sha256](../model-assets.sha256) ties these mounts to the inspected source artifacts. Copy them from the same reviewed checkout to EC2 `/opt/aishield/models-bundle`; retain the manifest and verify before deployment with `python scripts/verify_models.py` and MODEL_ROOT pointing at the bundle. Do not download or load untrusted pickle files. Updating assets requires a reviewed manifest change and inference validation.
+Asset paths in MODEL_ASSET_DIR must contain toxicity, voice_model, scream_model and vosk-model-small-en-in-0.4. Model files are excluded from the image and mounted read-only. [model-assets.sha256](../assets/model-assets.sha256) ties these mounts to the inspected source artifacts. Copy the model subdirectories from the same reviewed checkout to EC2 `/opt/aishield/models-bundle`; retain the manifest and verify before deployment with `python -m scripts.verify_models` and MODEL_ROOT pointing at the bundle. Do not download or load untrusted pickle files. Updating assets requires a reviewed manifest change and inference validation.
 
 For a fast deployment-mechanics demo, set FAKE_INFERENCE=true in .env.local; the explicit synthetic model is forbidden in production. Real scoring is currently fixed below persistence threshold, so normal recordings do not create alerts (see [evidence](architecture.md)). The fake alert provider never contacts a phone or external service. To see its durable statuses, run the integration tests below; they inject a .3 threat score and fake contact.
 

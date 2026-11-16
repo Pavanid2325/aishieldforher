@@ -17,7 +17,7 @@ def main():
         raise SystemExit('Implement a production provider before enabling alerts')
     if os.getenv('FAKE_INFERENCE','false') != 'false':
         raise SystemExit('Production requires real inference')
-    from operations import create_operations_app
+    from app.operations import create_operations_app
     create_operations_app()
     print('Production configuration validated')
 

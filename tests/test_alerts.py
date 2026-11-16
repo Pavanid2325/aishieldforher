@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 def create_alert(database):
-    from db import insert_incident
+    from app.db import insert_incident
     with database() as conn:
         with conn.cursor() as cur:
             cur.execute("INSERT INTO contacts(name,phone,level) VALUES ('Test','fake-only',1)")
@@ -21,7 +21,7 @@ def due(database):
             cur.execute("UPDATE alert_outbox SET available_at=now()-interval '1 second'")
 
 def test_atomic_rollback(database,monkeypatch):
-    from db import insert_incident
+    from app.db import insert_incident
     # Deliberately break the outbox insert: incident and cooldown must roll back too.
     with database() as conn:
         with conn.cursor() as cur:
@@ -34,7 +34,7 @@ def test_atomic_rollback(database,monkeypatch):
             assert cur.fetchone()[0] == 0
 
 def test_broker_failure_recovery_and_duplicate_execution(database,monkeypatch):
-    import alerts
+    from app import alerts
     incident=create_alert(database)
     def fail(*args,**kwargs):
         raise ConnectionError('broker offline')
@@ -50,7 +50,7 @@ def test_broker_failure_recovery_and_duplicate_execution(database,monkeypatch):
     assert status(database) == ('delivered',1)
 
 def test_bounded_retry_and_terminal_failure(database,monkeypatch):
-    import alerts
+    from app import alerts
     create_alert(database)
     monkeypatch.setenv('FAKE_ALERT_FAIL','true')
     for attempt in range(1,6):
@@ -65,7 +65,7 @@ def test_bounded_retry_and_terminal_failure(database,monkeypatch):
             assert cur.fetchone()[0] == 5
 
 def test_bounded_publication_and_lost_queue_recovery(database,monkeypatch):
-    import alerts
+    from app import alerts
     create_alert(database)
     sent=[]
     monkeypatch.setattr(alerts.deliver,'apply_async',lambda args:sent.append(args[0]))
@@ -79,7 +79,7 @@ def test_bounded_publication_and_lost_queue_recovery(database,monkeypatch):
     assert sent==[1,1]
 
 def test_concurrent_tasks_only_one_provider_call(database,monkeypatch):
-    import alerts
+    from app import alerts
     create_alert(database)
     entered,release=threading.Event(),threading.Event()
     calls=[]
@@ -99,7 +99,7 @@ def test_concurrent_tasks_only_one_provider_call(database,monkeypatch):
     assert status(database)==('delivered',1)
 
 def test_worker_crash_recovery_and_retry_budget(database):
-    import alerts
+    from app import alerts
     create_alert(database)
     with database() as conn:
         with conn.cursor() as cur:
@@ -113,13 +113,13 @@ def test_worker_crash_recovery_and_retry_budget(database):
             assert cur.fetchall()==[('interrupted',),('delivered',)]
 
 def test_shared_cooldown(database):
-    from db import insert_incident
+    from app.db import insert_incident
     first=create_alert(database)
     assert first
     assert insert_incident(1,.3,'LEVEL_3','test','unknown','test.wav',0,0,'test') is None
 
 def test_no_delivery_before_backoff_expires(database,monkeypatch):
-    import alerts
+    from app import alerts
     create_alert(database)
     monkeypatch.setenv('FAKE_ALERT_FAIL','true')
     alerts.deliver(1)
@@ -127,7 +127,7 @@ def test_no_delivery_before_backoff_expires(database,monkeypatch):
     assert status(database)==('retry',1)
 
 def test_last_interrupted_attempt_becomes_terminal(database):
-    import alerts
+    from app import alerts
     create_alert(database)
     with database() as conn:
         with conn.cursor() as cur:
@@ -141,7 +141,7 @@ def test_real_broker_probe(database):
     if os.getenv('RUN_REDIS') != 'true':
         pytest.skip('Set RUN_REDIS=true to exercise a live Redis broker')
     from celery.contrib.testing.worker import start_worker
-    from alerts import celery,probe,dispatch_once
+    from app.alerts import celery,probe,dispatch_once
     import time
     create_alert(database)
     with start_worker(celery,perform_ping_check=False,pool='solo'):

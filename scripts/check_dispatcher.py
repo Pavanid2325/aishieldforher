@@ -1,4 +1,4 @@
-from db import transaction
+from app.db import transaction
 with transaction() as conn:
     with conn.cursor() as cur:
         cur.execute("SELECT checked_at > now()-interval '30 seconds' FROM operational_checks WHERE name='dispatcher'")

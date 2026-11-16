@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from celery import Celery, Task
-from db import transaction, connect
+from app.db import transaction, connect
 
 log = logging.getLogger('shield')
 log.setLevel(logging.INFO)
@@ -24,7 +24,7 @@ logging.getLogger('celery.app.trace').addFilter(RedactTaskErrors())
 class FlaskTask(Task):
     def __call__(self, *args, **kwargs):
         # Worker imports only lightweight Flask initialization, never audio models.
-        from operations import create_operations_app
+        from app.operations import create_operations_app
         if not hasattr(self, '_flask_app'):
             self._flask_app = create_operations_app()
         with self._flask_app.app_context():

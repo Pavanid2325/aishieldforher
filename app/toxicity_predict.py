@@ -3,6 +3,7 @@ import pickle
 import re
 import string
 import sys
+from app.model_paths import model_root
 
 # define tokenizer exactly as in training
 re_tok = re.compile(f'([{string.punctuation}])')
@@ -15,9 +16,9 @@ sys.modules['__main__'].tokenize = tokenize
 
 
 # now load models
-models = pickle.load(open(os.path.join(os.getenv("MODEL_ROOT", "."), "models/nbsvm_models.pkl"),"rb"))
-ratios = pickle.load(open(os.path.join(os.getenv("MODEL_ROOT", "."), "models/ratios.pkl"),"rb"))
-vectorizer = pickle.load(open(os.path.join(os.getenv("MODEL_ROOT", "."), "models/vectorizer.pkl"),"rb"))
+models = pickle.load(open(model_root() / "toxicity/nbsvm_models.pkl", "rb"))
+ratios = pickle.load(open(model_root() / "toxicity/ratios.pkl", "rb"))
+vectorizer = pickle.load(open(model_root() / "toxicity/vectorizer.pkl", "rb"))
 
 label_cols = [
     "toxic",

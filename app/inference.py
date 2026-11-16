@@ -14,7 +14,7 @@ def initialize(app):
     else:
         from scripts.verify_models import verify
         verify()
-        from stt import process_audio_file, calculate_iot_threat
+        from app.stt import process_audio_file, calculate_iot_threat
         _process, _iot = process_audio_file, calculate_iot_threat
     app.config['MODELS_READY'] = True
 

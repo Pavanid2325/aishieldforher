@@ -5,8 +5,8 @@ import sys
 import time
 import urllib.request
 import uuid
-from alerts import probe
-from db import transaction
+from app.alerts import probe
+from app.db import transaction
 
 def get(url, token=None):
     req = urllib.request.Request(url, headers={'Authorization':'Bearer '+token} if token else {})

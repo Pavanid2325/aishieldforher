@@ -10,10 +10,10 @@ x-app: &app
     options: {max-size: '10m', max-file: '3'}
   volumes:
     - recordings:/data/uploads
-    - ${MODEL_ASSET_DIR:-.}/models:/models/models:ro
-    - ${MODEL_ASSET_DIR:-.}/voice_model:/models/voice_model:ro
-    - ${MODEL_ASSET_DIR:-.}/scream_model:/models/scream_model:ro
-    - ${MODEL_ASSET_DIR:-.}/vosk-model-small-en-in-0.4:/models/vosk-model-small-en-in-0.4:ro
+    - ${MODEL_ASSET_DIR:-./assets/models}/toxicity:/models/toxicity:ro
+    - ${MODEL_ASSET_DIR:-./assets/models}/voice_model:/models/voice_model:ro
+    - ${MODEL_ASSET_DIR:-./assets/models}/scream_model:/models/scream_model:ro
+    - ${MODEL_ASSET_DIR:-./assets/models}/vosk-model-small-en-in-0.4:/models/vosk-model-small-en-in-0.4:ro
   networks: [backend]
   security_opt: [no-new-privileges:true]
   healthcheck: &api-health
@@ -32,15 +32,15 @@ services:
     environment: {INSTANCE_ID: api2}
   worker:
     <<: *app
-    command: [celery, -A, 'alerts:celery', worker, --loglevel=WARNING, --concurrency=2, '--hostname=worker@%h']
+    command: [celery, -A, 'app.alerts:celery', worker, --loglevel=WARNING, --concurrency=2, '--hostname=worker@%h']
     healthcheck:
-      test: [CMD-SHELL, 'celery -A alerts:celery inspect ping --destination worker@$$HOSTNAME --timeout 3 | grep -q pong']
+      test: [CMD-SHELL, 'celery -A app.alerts:celery inspect ping --destination worker@$$HOSTNAME --timeout 3 | grep -q pong']
       interval: 30s
       timeout: 10s
       retries: 3
   dispatcher:
     <<: *app
-    command: [python, -m, alerts]
+    command: [python, -m, app.alerts]
     healthcheck:
       test: [CMD, python, scripts/check_dispatcher.py]
       interval: 20s
@@ -50,7 +50,7 @@ services:
     <<: *app
     profiles: [tools]
     restart: 'no'
-    command: [python, -m, migrate]
+    command: [python, -m, app.migrate]
     healthcheck: {disable: true}
   nginx:
     image: nginx:1.28.0-alpine
