@@ -1,0 +1,3 @@
+[submodule "threat-detection-voice"]
+	path = threat-detection-voice
+	url = https://github.com/Pavanid2325/threat-detection-voice.git

@@ -15,7 +15,7 @@ Flask backend for audio and IoT threat scoring, contact management, incident sto
 | [`experiments/`](experiments/) | Manual database/model checks and toxicity training code; not part of the API image |
 | [`tests/`](tests/) | Automated API, alert, configuration, and deployment tests |
 | [`docs/`](docs/) | Deployment runbook, architecture, verification, and [earlier prototype notes](docs/prototype-notes.md) |
-| [`threat-detection-voice/`](threat-detection-voice/) | Linked voice detection repository |
+| [`threat-detection-voice/`](https://github.com/Pavanid2325/threat-detection-voice) | Linked voice detection repository (Git submodule) |
 
 The root holds the README, Compose and Docker configuration, Python dependency files, and example environment settings. Runtime uploads stay in the ignored `uploads/` folder locally or in a Docker volume.
 
