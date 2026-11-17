@@ -16,20 +16,16 @@ AI Shield for Her is a Flask backend for audio and IoT threat scoring, emergency
 ## Architecture
 
 ```mermaid
-flowchart LR
-    Client["Client or Android app"] -->|"HTTP locally; HTTPS in production"| Proxy["Nginx reverse proxy"]
-
-    subgraph Host["Application host"]
-        Proxy --> API1["Gunicorn and Flask API 1"]
-        Proxy --> API2["Gunicorn and Flask API 2"]
-        Dispatcher["Pending alert dispatcher"] -->|"Publish due tasks"| Redis[(Redis broker)]
-        Redis --> Worker["Celery worker"]
-    end
-
-    API1 -->|"Incidents, contacts, alert intents"| DB[(PostgreSQL or RDS)]
-    API2 -->|"Incidents, contacts, alert intents"| DB
-    DB -->|"Eligible pending alerts"| Dispatcher
-    Worker -->|"Read and update alert state"| DB
+flowchart TD
+    Client["Client or Android app"] -->|HTTPS| Proxy["Nginx reverse proxy"]
+    Proxy --> API1["Gunicorn and Flask API 1"]
+    Proxy --> API2["Gunicorn and Flask API 2"]
+    API1 --> DB[(PostgreSQL or RDS)]
+    API2 --> DB
+    DB -->|Pending alerts| Dispatcher["Alert dispatcher"]
+    Dispatcher --> Redis[(Redis broker)]
+    Redis --> Worker["Celery worker"]
+    Worker --> DB
     Worker --> Provider["Alert provider adapter"]
     Provider --> Recipient["Recipient"]
 ```
